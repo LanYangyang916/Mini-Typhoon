@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AERIS-02 气象沙盘控制台 - AI 接入版</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <style>
+    /* ==========================================
+           Apple 官方字体与暗黑背景
+        ========================================== */
+    body {
+      margin: 0;
+      background-color: #000000;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Icons", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: rgba(255, 255, 255, 0.96);
+      letter-spacing: -0.02em;
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+      padding: 20px;
+      gap: 20px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* ==========================================
+           iOS 控制中心级滑块 (Sliders)
+        ========================================== */
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      background: transparent;
+      height: 24px;
+    }
+
+    input[type=range]:focus {
+      outline: none;
+    }
+
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 8px;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 9999px;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 20px;
+      width: 20px;
+      border-radius: 50%;
+      background: #ffffff;
+      cursor: pointer;
+      margin-top: -6px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+      transition: transform 0.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    input[type=range]::-webkit-slider-thumb:active {
+      transform: scale(1.15);
+    }
+
+    .readonly-slider {
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    /* ==========================================
+           iOS 极致毛玻璃面板 (Acrylic Material)
+        ========================================== */
+    .exhibition-panel {
+      background: rgba(28, 28, 30, 0.65);
+      backdrop-filter: blur(25px) saturate(180%);
+      -webkit-backdrop-filter: blur(25px) saturate(180%);
+      border: 0.5px solid rgba(255, 255, 255, 0.15);
+      border-radius: 24px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    }
+
+    .glow-bar-red {
+      box-shadow: 0 0 12px rgba(255, 69, 58, 0.6);
+    }
+
+    .glow-bar-teal {
+      box-shadow: 0 0 12px rgba(50, 173, 230, 0.6);
+    }
+
+    .glow-bar-blue {
+      box-shadow: 0 0 12px rgba(10, 132, 255, 0.6);
+    }
+
+    .radar-shadow {
+      box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.8), inset 0 0 0 0.5px rgba(255, 255, 255, 0.15);
+    }
+
+    @keyframes radar-flash {
+      0% {
+        box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.8), inset 0 0 0 0.5px rgba(255, 255, 255, 0.15);
+      }
+
+      50% {
+        box-shadow: inset 0 0 100px rgba(48, 209, 88, 0.2), inset 0 0 20px rgba(48, 209, 88, 0.4);
+        border-color: rgba(48, 209, 88, 0.5);
+      }
+
+      100% {
+        box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.8), inset 0 0 0 0.5px rgba(255, 255, 255, 0.15);
+      }
+    }
+
+    .win-flash {
+      animation: radar-flash 2s infinite;
+    }
+
+    @keyframes golden-flash {
+      0% {
+        box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.8), inset 0 0 0 0.5px rgba(255, 255, 255, 0.15);
+      }
+
+      50% {
+        box-shadow: inset 0 0 120px rgba(255, 215, 0, 0.15), inset 0 0 30px rgba(255, 215, 0, 0.3);
+        border-color: rgba(255, 215, 0, 0.5);
+      }
+
+      100% {
+        box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.8), inset 0 0 0 0.5px rgba(255, 255, 255, 0.15);
+      }
+    }
+
+    .ultimate-win-flash {
+      animation: golden-flash 2s infinite;
+    }
+
+    /* Loading */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: #000000;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      transition: opacity 0.8s;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+      border-top-color: rgba(255, 255, 255, 0.9);
+      animation: spin 1s cubic-bezier(0.6, 0.2, 0.4, 0.8) infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Minimap 画中画雷达小地图 */
+    #minimap-container {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      width: 260px;
+      height: 164px;
+      border-radius: 16px;
+      overflow: hidden;
+      z-index: 15;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(12px) saturate(150%);
+      -webkit-backdrop-filter: blur(12px) saturate(150%);
+      border: 0.5px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 0 30px rgba(0, 0, 0, 0.4);
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    #minimap-container:hover {
+      transform: scale(1.02);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), inset 0 0 30px rgba(0, 0, 0, 0.4);
+    }
+
+    #minimap-bg,
+    #minimap-track {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    #minimap-bg {
+      opacity: 0.7;
+    }
+
+    #minimap-track {
+      opacity: 0.8;
+      z-index: 3;
+    }
+
+    #minimap-grid {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+      background-size: 12.5% 16.667%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    #minimap-ring {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      right: 2px;
+      bottom: 2px;
+      border-radius: 14px;
+      border: 0.5px solid rgba(255, 255, 255, 0.06);
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    #minimap-label {
+      position: absolute;
+      top: 8px;
+      left: 10px;
+      font-size: 9px;
+      font-weight: 600;
+      color: rgba(235, 235, 245, 0.7);
+      letter-spacing: 0.08em;
+      z-index: 3;
+      pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    #radar-dot {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ff3b30;
+      transform: translate(-50%, -50%);
+      z-index: 4;
+      pointer-events: none;
+      box-shadow: 0 0 4px 2px rgba(255, 59, 48, 0.4);
+      animation: breathe 2s ease-in-out infinite;
+      left: 50%;
+      top: 50%;
+    }
+
+    @keyframes breathe {
+
+      0%,
+      100% {
+        box-shadow: 0 0 2px 2px rgba(255, 59, 48, 0.3);
+        transform: translate(-50%, -50%) scale(1);
+      }
+
+      50% {
+        box-shadow: 0 0 10px 8px rgba(255, 59, 48, 0.5);
+        transform: translate(-50%, -50%) scale(1.15);
+      }
+    }
+
+    #status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+      transition: all 0.4s ease;
+    }
+
+    #status-indicator .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.4s ease;
+    }
+
+    #status-dot.active {
+      background: #32ade6;
+      box-shadow: 0 0 8px rgba(50, 173, 230, 0.5);
+    }
+
+    #status-dot.warning {
+      background: #ff9f0a;
+      box-shadow: 0 0 8px rgba(255, 159, 10, 0.5);
+    }
+
+    #status-dot.danger {
+      background: #ff453a;
+      box-shadow: 0 0 8px rgba(255, 69, 58, 0.5);
+    }
+
+    #status-dot.dead {
+      background: #8e8e93;
+      box-shadow: 0 0 8px rgba(142, 142, 147, 0.5);
+    }
+
+    .meteo-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+    }
+
+    .meteo-row .label {
+      font-size: 11px;
+      color: rgba(235, 235, 245, 0.6);
+      font-weight: 500;
+    }
+
+    .meteo-row .value {
+      font-size: 13px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Checkbox Checkmark style */
+    .ch-box {
+      transition: all 0.3s;
+    }
+
+    .ch-box.checked {
+      background: #30d158;
+      border-color: #30d158;
+    }
+
+    .ch-text.checked {
+      color: #30d158;
+      font-weight: 600;
+    }
+
+    /* ==========================================
+           Built-in Chat Assistant UI
+        ========================================== */
+    #chat-wrapper {
+      min-height: 220px;
+    }
+
+    #chat-messages {
+      scroll-behavior: smooth;
+      overflow-y: auto;
+      max-height: 260px;
+    }
+
+    #chat-messages::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #chat-messages::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #chat-messages::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 2px;
+    }
+
+    .msg-bubble {
+      max-width: 88%;
+      padding: 8px 12px;
+      border-radius: 14px;
+      font-size: 11px;
+      line-height: 1.55;
+      font-weight: 400;
+      word-break: break-word;
+      animation: msg-in 0.25s ease-out;
+    }
+
+    @keyframes msg-in {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .msg-user {
+      align-self: flex-end;
+      background: rgba(10, 132, 255, 0.25);
+      border: 0.5px solid rgba(10, 132, 255, 0.35);
+      color: rgba(255, 255, 255, 0.92);
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-bot {
+      align-self: flex-start;
+      background: rgba(255, 255, 255, 0.08);
+      border: 0.5px solid rgba(255, 255, 255, 0.1);
+      color: rgba(235, 235, 245, 0.85);
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg-typing {
+      align-self: flex-start;
+      padding: 6px 14px;
+      color: rgba(235, 235, 245, 0.4);
+      font-size: 11px;
+      font-style: italic;
+    }
+
+    #chat-input {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.06);
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.9);
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+
+    #chat-input:focus {
+      border-color: rgba(50, 173, 230, 0.5);
+    }
+
+    #chat-input::placeholder {
+      color: rgba(235, 235, 245, 0.3);
+    }
+
+    #chat-send-btn {
+      background: rgba(50, 173, 230, 0.2);
+      border: 0.5px solid rgba(50, 173, 230, 0.3);
+      color: #32ade6;
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+
+    #chat-send-btn:hover {
+      background: rgba(50, 173, 230, 0.3);
+    }
+
+    #chat-send-btn:active {
+      transform: scale(0.95);
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="loading">
+    <div class="spinner mb-6"></div>
+    <div class="text-[15px] font-[500] text-[rgba(235,235,245,0.6)]">正在进入微缩气象台风实验室...</div>
+  </div>
+
+  <div id="target-hint" style="display: none;"></div>
+
+  <!-- ================= 中间区域：大尺度独立 3D 观测窗 ================= -->
+  <main id="center-viewport"
+    class="flex-1 relative rounded-[24px] overflow-hidden border border-[rgba(255,255,255,0.15)] bg-[#080808] flex flex-col z-0 shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
+
+    <div id="canvas-container" class="absolute inset-0 z-[1]" style="cursor: crosshair;"></div>
+    <div id="radar-vignette"
+      class="absolute inset-0 pointer-events-none radar-shadow z-[5] transition-all duration-500"></div>
+
+    <!-- ===== 左上角：双模式切换 (Segmented Control) ===== -->
+    <div
+      class="absolute top-[24px] left-[24px] z-[30] flex bg-[rgba(28,28,30,0.65)] backdrop-blur-xl border border-[rgba(255,255,255,0.15)] rounded-full p-[3px] shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+      <button id="mode-sandbox"
+        class="px-5 py-1.5 rounded-full text-[12px] font-[600] transition-all bg-[rgba(255,255,255,0.15)] text-white shadow-sm pointer-events-none">
+        探索模式
+      </button>
+      <button id="mode-challenge"
+        class="px-5 py-1.5 rounded-full text-[12px] font-[600] transition-all text-[rgba(235,235,245,0.6)] hover:text-white">
+        终极挑战
+      </button>
+    </div>
+
+    <!-- ===== 悬浮菜单按钮 & 任务模态框 (向下位移) ===== -->
+    <button id="btn-tasks"
+      class="absolute top-[80px] left-[24px] w-[42px] h-[42px] rounded-full bg-[rgba(28,28,30,0.65)] backdrop-blur-xl border border-[rgba(255,255,255,0.15)] shadow-[0_4px_16px_rgba(0,0,0,0.4)] flex justify-center items-center text-white text-[20px] z-[30] transition-all hover:bg-[rgba(50,173,230,0.3)] hover:scale-105 active:scale-95 cursor-pointer">
+      ⚙️
+    </button>
+    <div
+      class="absolute top-[80px] left-[80px] text-[11px] text-[rgba(235,235,245,0.5)] font-[500] z-[6] pointer-events-none tracking-widest leading-[42px]">
+      模式选择
+    </div>
+
+    <div id="task-modal"
+      class="exhibition-panel absolute top-[130px] left-[24px] w-[280px] p-5 flex flex-col gap-4 z-[30] opacity-0 pointer-events-none transition-all duration-300 transform -translate-x-4">
+      <div>
+        <h2 class="text-[12px] font-[600] text-[rgba(255,255,255,0.96)] mb-3 flex items-center gap-2">
+          <span class="w-[6px] h-[6px] bg-[#32ade6] rounded-full"></span> 沙盒向导 (Guide)
+        </h2>
+        <div class="flex flex-col gap-[8px]" id="difficulty-btns">
+          <button data-level="beginner"
+            class="btn-diff active w-full py-2 px-3 rounded-[10px] bg-[#32ade6]/15 border border-[#32ade6]/50 text-[#32ade6] font-[600] text-[11px] text-left transition-all shadow-[0_0_15px_rgba(50,173,230,0.2)]">初级
+            (无陆地阻挡)</button>
+          <button data-level="intermediate"
+            class="btn-diff w-full py-2 px-3 rounded-[10px] bg-[rgba(255,255,255,0.08)] border border-transparent text-[rgba(235,235,245,0.6)] font-[600] text-[11px] text-left transition-all">中级
+            (寻觅纬度带)</button>
+          <button data-level="advanced"
+            class="btn-diff w-full py-2 px-3 rounded-[10px] bg-[rgba(255,255,255,0.08)] border border-transparent text-[rgba(235,235,245,0.6)] font-[600] text-[11px] text-left transition-all">高级
+            (避开陆地)</button>
+        </div>
+      </div>
+      <div
+        class="bg-[rgba(0,0,0,0.3)] rounded-[12px] p-3 border border-[rgba(255,255,255,0.08)] relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-[3px] h-full bg-[#32ade6]"></div>
+        <p id="mission-text" class="text-[11px] text-[rgba(235,235,245,0.8)] leading-[1.5]">
+          自由探索：在画布中直接按住鼠标拖拽台风移动坐标，或者调控海温进行推演试验。</p>
+      </div>
+    </div>
+
+    <!-- ===== 底部水平控制栏 ===== -->
+    <div class="exhibition-panel absolute bottom-[24px] left-[24px] right-[300px] p-4 z-[20] flex items-center gap-6">
+      <div class="flex-1 flex gap-6">
+        <div class="flex-1">
+          <div class="flex justify-between items-end mb-1.5"><label
+              class="text-[11px] font-[500] text-[rgba(235,235,245,0.6)]">生成经度 (Lon)</label><span id="val-lon"
+              class="text-[13px] text-[#ff9f0a] font-[600]">140° E</span></div>
+          <input type="range" id="slider-lon" class="readonly-slider" min="100" max="290" value="140" step="1">
+        </div>
+        <div class="flex-1">
+          <div class="flex justify-between items-end mb-1.5"><label
+              class="text-[11px] font-[500] text-[rgba(235,235,245,0.6)]">生成纬度 (Lat)</label><span id="val-lat"
+              class="text-[13px] text-[#32ade6] font-[600]">15° N</span></div>
+          <input type="range" id="slider-lat" class="readonly-slider" min="-60" max="60" value="15" step="1">
+        </div>
+        <div class="flex-1">
+          <div class="flex justify-between items-end mb-1.5"><label
+              class="text-[11px] font-[500] text-[rgba(235,235,245,0.6)]">底层海温</label><span id="val-temp"
+              class="text-[13px] text-[#ff453a] font-[600]">28.5 °C</span></div>
+          <input type="range" id="slider-temp" min="25" max="32" value="28.5" step="0.1">
+        </div>
+      </div>
+      <div class="flex gap-2 items-center pl-4 border-l border-[rgba(255,255,255,0.1)]">
+        <button id="sim-btn"
+          class="py-2.5 px-4 rounded-[12px] font-[600] text-[12px] transition-all duration-300 border whitespace-nowrap shadow-[0_0_15px_rgba(48,209,88,0.2)] hover:scale-105 active:scale-95"
+          style="background:rgba(48,209,88,0.15);border-color:rgba(48,209,88,0.3);color:#30d158">▶ 启动推演</button>
+        <button id="reset-sim-btn"
+          class="py-2.5 px-4 rounded-[12px] font-[600] text-[12px] transition-all duration-300 border whitespace-nowrap hover:bg-[rgba(255,255,255,0.15)] active:scale-95"
+          style="background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.15);color:rgba(235,235,245,0.8)">↺
+          重置</button>
+      </div>
+    </div>
+
+    <!-- Minimap -->
+    <div id="minimap-container" title="点击切换 特写/全景 视角">
+      <canvas id="minimap-bg"></canvas><canvas id="minimap-track"></canvas>
+      <div id="minimap-grid"></div>
+      <div id="minimap-ring"></div>
+      <div id="minimap-label"><span>🔍</span> <span id="minimap-view-label">VIEW: CLOSE-UP</span></div>
+      <div id="radar-dot"></div>
+    </div>
+
+    <!-- 沙盒通关提示 -->
+    <div id="win-overlay"
+      class="absolute top-8 left-1/2 -translate-x-1/2 opacity-0 pointer-events-none transition-all duration-500 transform -translate-y-4 z-[20]">
+      <div
+        class="bg-[rgba(28,28,30,0.85)] backdrop-blur-[25px] border border-[#30d158]/50 text-[#30d158] px-8 py-4 rounded-[24px] font-[600] text-[16px] shadow-[0_0_40px_rgba(48,209,88,0.3)] flex items-center gap-3">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+        </svg> 完美台风涡旋达成 (Sandbox)
+      </div>
+    </div>
+
+    <!-- 终极挑战胜利提示 -->
+    <div id="ultimate-win-overlay"
+      class="absolute top-8 left-1/2 -translate-x-1/2 opacity-0 pointer-events-none transition-all duration-500 transform -translate-y-4 z-[20]">
+      <div
+        class="bg-[rgba(28,28,30,0.95)] backdrop-blur-[25px] border border-[#FFD700]/60 text-[#FFD700] px-10 py-5 rounded-[24px] font-[700] text-[18px] shadow-[0_0_50px_rgba(255,215,0,0.4)] flex items-center gap-3 tracking-wide">
+        <svg class="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
+          <path
+            d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z">
+          </path>
+        </svg>
+        终极挑战达成：海洋霸主
+      </div>
+    </div>
+
+    <!-- 警告警报覆盖 (赤道 / 风切变) -->
+    <div id="alert-overlay"
+      class="absolute top-8 left-1/2 -translate-x-1/2 opacity-0 pointer-events-none transition-all duration-500 transform -translate-y-4 z-[20]">
+      <div id="alert-content"
+        class="bg-[rgba(28,28,30,0.85)] backdrop-blur-[25px] border border-[#ff453a]/50 text-[#ff453a] px-8 py-4 rounded-[24px] font-[600] text-[16px] shadow-[0_0_40px_rgba(255,69,58,0.3)] flex items-center gap-3">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+          </path>
+        </svg>
+        <span id="alert-text">警报触发</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= 右侧面板：AI 空间与双模式模型 ================= -->
+  <aside class="exhibition-panel w-[300px] flex flex-col flex-shrink-0 overflow-hidden relative z-10">
+    <div class="p-5 flex-1 flex flex-col gap-5 h-full">
+
+      <!-- Top: AI 助手介绍区 -->
+      <div class="flex items-start gap-3 border-b border-[rgba(255,255,255,0.1)] pb-4 shrink-0">
+        <div
+          class="w-10 h-10 rounded-full bg-gradient-to-br from-[#32ade6] to-[#0a84ff] flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(50,173,230,0.3)]">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-[13px] font-[600] text-[rgba(255,255,255,0.96)] mb-1">气象推演 AI 助理</h2>
+          <p class="text-[11px] text-[rgba(235,235,245,0.7)] leading-[1.5]">你好！在沙盘中<b>直接拖拽台风</b>改变初始位置。你敢挑战顶部的“终极任务”吗？
+          </p>
+        </div>
+      </div>
+
+      <!-- Middle: 【动态切换容器】 -->
+      <div id="dynamic-panel-container" class="shrink-0 relative">
+
+        <!-- 面板 A：探索模式 - 解析模型 -->
+        <div id="panel-analysis" class="w-full transition-all duration-300">
+          <h2 class="text-[12px] font-[600] text-[rgba(255,255,255,0.96)] mb-4 flex items-center justify-between">
+            <div class="flex items-center gap-2"><span class="w-[6px] h-[6px] bg-[#0a84ff] rounded-full"></span> 解析模型
+              (Analysis)</div>
+            <div class="flex items-baseline gap-1 text-[#32ade6]"><span
+                class="text-[10px] font-normal opacity-80">Score:</span><span id="score-total"
+                class="text-[14px] font-bold">0%</span></div>
+          </h2>
+          <div class="space-y-[14px]">
+            <div>
+              <div class="flex justify-between text-[11px] mb-[6px]"><span
+                  class="text-[rgba(235,235,245,0.6)] font-[500]">潜热能量</span><span id="score-energy"
+                  class="text-[#ff453a] font-[600]">0%</span></div>
+              <div class="w-full h-[6px] bg-[rgba(255,255,255,0.12)] rounded-full overflow-hidden">
+                <div id="bar-energy"
+                  class="h-full bg-[#ff453a] glow-bar-red transition-all duration-300 w-[0%] rounded-full"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] mb-[6px]"><span
+                  class="text-[rgba(235,235,245,0.6)] font-[500]">地转偏向力</span><span id="score-rot"
+                  class="text-[#32ade6] font-[600]">0%</span></div>
+              <div class="w-full h-[6px] bg-[rgba(255,255,255,0.12)] rounded-full overflow-hidden">
+                <div id="bar-rot"
+                  class="h-full bg-[#32ade6] glow-bar-teal transition-all duration-300 w-[0%] rounded-full"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] mb-[6px]"><span
+                  class="text-[rgba(235,235,245,0.6)] font-[500]">结构完整度 (陆地/阻力干预)</span><span id="score-struct"
+                  class="text-[#0a84ff] font-[600]">0%</span></div>
+              <div class="w-full h-[6px] bg-[rgba(255,255,255,0.12)] rounded-full overflow-hidden">
+                <div id="bar-struct"
+                  class="h-full bg-[#0a84ff] glow-bar-blue transition-all duration-300 w-[0%] rounded-full"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 面板 B：终极挑战 - 任务卡 -->
+        <div id="panel-challenge" class="w-full hidden transition-all duration-300">
+          <h2 class="text-[13px] font-[600] text-[#FFD700] mb-3 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clip-rule="evenodd"></path>
+            </svg>
+            终极挑战 (Mission)
+          </h2>
+          <div
+            class="bg-[rgba(255,215,0,0.1)] border border-[#FFD700]/30 rounded-[12px] p-3 text-[11px] text-[rgba(235,235,245,0.85)] leading-[1.6]">
+            请寻找太平洋上的【信风带黄金区】，孵化一个超强台风，并在海面维持它存活！
+          </div>
+          <div class="mt-4 space-y-3.5 text-[11px]">
+            <div class="flex items-center gap-3">
+              <div id="ch-box-1"
+                class="ch-box w-[18px] h-[18px] rounded-full border border-[rgba(255,255,255,0.3)] flex items-center justify-center text-transparent text-[10px]">
+                ✔</div>
+              <span class="ch-text text-[rgba(235,235,245,0.7)] transition-all" id="ch-text-1">曾在 5°-20° 信风带生成</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <div id="ch-box-2"
+                class="ch-box w-[18px] h-[18px] rounded-full border border-[rgba(255,255,255,0.3)] flex items-center justify-center text-transparent text-[10px]">
+                ✔</div>
+              <span class="ch-text text-[rgba(235,235,245,0.7)] transition-all" id="ch-text-2">中心气压曾达到 &le; 920
+                hPa</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <div id="ch-box-3"
+                class="ch-box w-[18px] h-[18px] rounded-full border border-[rgba(255,255,255,0.3)] flex items-center justify-center text-transparent text-[10px]">
+                ✔</div>
+              <span class="ch-text text-[rgba(235,235,245,0.7)] transition-all" id="ch-text-3">推演存活时长 &ge; 15 秒 (<span
+                  id="ch-time">0.0</span>s)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 共用：实测气象数据与状态指示 -->
+        <div class="mt-4 pt-3 border-t border-[rgba(255,255,255,0.06)]">
+          <div class="meteo-row"><span class="label">中心最低气压</span><span id="val-pressure" class="value"
+              style="color:#ff9f0a">-- hPa</span></div>
+          <div class="meteo-row"><span class="label">最大持续风速</span><span id="val-wind" class="value"
+              style="color:#ff9f0a">-- m/s</span></div>
+        </div>
+        <div id="status-indicator" class="mt-3"
+          style="background:rgba(50,173,230,0.1);border:0.5px solid rgba(50,173,230,0.2)">
+          <span id="status-dot" class="dot active"></span><span id="status-text" style="color:#32ade6">气旋活跃中</span>
+        </div>
+      </div>
+
+      <!-- Bottom: 内置 AI 情境对话区 -->
+      <div id="chat-wrapper"
+        class="flex-1 mt-1 bg-[rgba(0,0,0,0.3)] rounded-[16px] border border-[rgba(255,255,255,0.1)] flex flex-col overflow-hidden pointer-events-auto shadow-[inset_0_0_20px_rgba(0,0,0,0.4)]">
+        <div
+          class="p-2.5 border-b border-[rgba(255,255,255,0.05)] text-[10px] font-[600] text-[rgba(235,235,245,0.45)] tracking-widest text-center flex items-center justify-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#30d158] shadow-[0_0_6px_rgba(48,209,88,0.5)]"></span>
+          情境感知 AI 助手
+        </div>
+        <div id="chat-messages" class="flex-1 p-3 flex flex-col gap-2.5">
+          <div class="msg-bubble msg-bot">你好！我是气象推演助手。可以问我：台风为什么在赤道消散？为什么我的台风变弱了？什么是地转偏向力？</div>
+        </div>
+        <div id="chat-input-area" class="flex gap-2 p-3 border-t border-[rgba(255,255,255,0.06)]">
+          <input id="chat-input" type="text" placeholder="输入问题…" autocomplete="off" maxlength="120">
+          <button id="chat-send-btn">发送</button>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+  <script>
+    // ==========================================
+    // UI 交互与双模式逻辑
+    // ==========================================
+    const btnTasks = document.getElementById('btn-tasks');
+    const taskModal = document.getElementById('task-modal');
+    let taskModalOpen = false;
+
+    btnTasks.addEventListener('click', (e) => {
+      e.stopPropagation(); taskModalOpen = !taskModalOpen;
+      if (taskModalOpen) {
+        taskModal.style.opacity = '1'; taskModal.style.pointerEvents = 'auto'; taskModal.style.transform = 'translate(0)';
+      } else {
+        taskModal.style.opacity = '0'; taskModal.style.pointerEvents = 'none'; taskModal.style.transform = 'translate(-16px)';
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (taskModalOpen && !taskModal.contains(e.target) && e.target !== btnTasks) {
+        taskModalOpen = false; taskModal.style.opacity = '0'; taskModal.style.pointerEvents = 'none'; taskModal.style.transform = 'translate(-16px)';
+      }
+    });
+
+    // ==========================================
+    // 新增全局任务状态变量
+    // ==========================================
+    let isChallengeMode = false;
+    let missionState = {
+      isInTradeWinds: false,
+      isPressureLow: false,
+      survivalTime: 0,
+      isCompleted: false
+    };
+
+    const modeSandboxBtn = document.getElementById('mode-sandbox');
+    const modeChallengeBtn = document.getElementById('mode-challenge');
+    const panelAnalysis = document.getElementById('panel-analysis');
+    const panelChallenge = document.getElementById('panel-challenge');
+
+    function resetChallengeUI() {
+      // 重置后台数据状态
+      missionState = {
+        isInTradeWinds: false,
+        isPressureLow: false,
+        survivalTime: 0,
+        isCompleted: false
+      };
+
+      // 重置 DOM 显示状态
+      [1, 2, 3].forEach(i => {
+        const box = document.getElementById(`ch-box-${i}`);
+        box.classList.remove('checked', 'text-white');
+        box.classList.add('text-transparent');
+        document.getElementById(`ch-text-${i}`).classList.remove('checked');
+      });
+      document.getElementById('ch-time').innerText = '0.0';
+      document.getElementById('ultimate-win-overlay').style.opacity = '0';
+      radarVignette.classList.remove('ultimate-win-flash');
+    }
+
+    function switchMode(toChallenge) {
+      isChallengeMode = toChallenge;
+      if (toChallenge) {
+        modeChallengeBtn.className = "px-5 py-1.5 rounded-full text-[12px] font-[600] transition-all bg-[rgba(255,215,0,0.15)] text-[#FFD700] shadow-sm pointer-events-none";
+        modeSandboxBtn.className = "px-5 py-1.5 rounded-full text-[12px] font-[600] transition-all text-[rgba(235,235,245,0.6)] hover:text-white cursor-pointer pointer-events-auto";
+        panelAnalysis.classList.add('hidden');
+        panelChallenge.classList.remove('hidden');
+      } else {
+        modeSandboxBtn.className = "px-5 py-1.5 rounded-full text-[12px] font-[600] transition-all bg-[rgba(255,255,255,0.15)] text-white shadow-sm pointer-events-none";
+        modeChallengeBtn.className = "px-5 py-1.5 rounded-full text-[12px] font-[600] transition-all text-[rgba(235,235,245,0.6)] hover:text-white cursor-pointer pointer-events-auto";
+        panelChallenge.classList.add('hidden');
+        panelAnalysis.classList.remove('hidden');
+      }
+      resetChallengeUI();
+      document.getElementById('reset-sim-btn').click();
+    }
+
+    modeSandboxBtn.addEventListener('click', () => switchMode(false));
+    modeChallengeBtn.addEventListener('click', () => switchMode(true));
+
+    // 沙盒模式按钮 (仅影响评价权重，现隐藏评价，不再重要，但保留物理反馈)
+    const missions = {
+      beginner: { target: 80 },
+      intermediate: { target: 90 },
+      advanced: { target: 96 }
+    };
+
+    let currentMode = 'beginner';
+    let isWin = false;
+    document.querySelectorAll('.btn-diff').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.btn-diff').forEach(b => b.className = "btn-diff w-full py-2 px-3 rounded-[10px] bg-[rgba(255,255,255,0.08)] border border-transparent text-[rgba(235,235,245,0.6)] font-[600] text-[11px] text-left transition-all");
+        e.target.className = "btn-diff active w-full py-2 px-3 rounded-[10px] bg-[#32ade6]/15 border border-[#32ade6]/50 text-[#32ade6] font-[600] text-[11px] text-left transition-all shadow-[0_0_15px_rgba(50,173,230,0.2)]";
+        currentMode = e.target.getAttribute('data-level');
+        isWin = false; runPhysics();
+      });
+    });
+
+    function calculateTyphoonScore(temp, lat, isLand) {
+      let energy = temp >= 26.5 ? Math.min(100, ((temp - 26.5) / (32 - 26.5)) * 100) : 0;
+      let absLat = Math.abs(lat); let rotation = 0;
+      if (absLat >= 5 && absLat <= 10) rotation = ((absLat - 5) / 5) * 100;
+      else if (absLat > 10 && absLat <= 25) rotation = 100;
+      else if (absLat > 25) rotation = Math.max(0, 100 - (absLat - 25) * 2.5);
+      let structure = isLand ? 8 : 100;
+      return { energy, rotation, structure, total: Math.round((energy + rotation + structure) / 3) };
+    }
+
+    // ==========================================
+    // Three.js 核心初始化
+    // ==========================================
+    const viewport = document.getElementById('center-viewport');
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    let width = viewport.clientWidth, height = viewport.clientHeight;
+
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(width, height); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.05;
+    controls.enablePan = false; controls.enableRotate = true; controls.minDistance = 10; controls.maxDistance = 150;
+
+    let cameraMode = 'micro';
+    document.getElementById('minimap-container').addEventListener('click', () => {
+      cameraMode = cameraMode === 'micro' ? 'macro' : 'micro';
+      document.getElementById('minimap-view-label').innerText = cameraMode === 'micro' ? 'VIEW: CLOSE-UP' : 'VIEW: MACRO (ALL)';
+    });
+
+    const mapWidth = 190, mapHeight = 120;
+    camera.position.set(0, 0, 22); camera.lookAt(0, 0, 0); controls.target.set(0, 0, 0); controls.update();
+
+    const manager = new THREE.LoadingManager();
+    let earthTextureLoaded = false, earthImage = null;
+    manager.onLoad = () => {
+      document.getElementById('loading').style.opacity = '0';
+      setTimeout(() => { document.getElementById('loading').style.display = 'none'; }, 800);
+      if (earthTextureLoaded && earthImage) initMinimapBackground(earthImage);
+    };
+
+    const textureLoader = new THREE.TextureLoader(manager);
+    const texture = textureLoader.load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg');
+    texture.wrapS = THREE.RepeatWrapping; texture.repeat.set(190 / 360, 120 / 180); texture.offset.set(280 / 360, 30 / 180);
+
+    textureLoader.load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg', (loadedTex) => {
+      earthImage = loadedTex.image; earthTextureLoaded = true;
+      if (document.getElementById('loading').style.opacity === '0' && earthImage) initMinimapBackground(earthImage);
+    });
+
+    const mapGeo = new THREE.PlaneGeometry(mapWidth, mapHeight, 256, 256);
+    const mapMesh = new THREE.Mesh(mapGeo, new THREE.MeshBasicMaterial({ map: texture })); scene.add(mapMesh);
+    const glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(mapWidth + 2.0, mapHeight + 2.0), new THREE.MeshBasicMaterial({ color: 0x0a2040, transparent: true, opacity: 0.4 }));
+    glowMesh.position.z = -0.1; scene.add(glowMesh);
+
+    // 台风 Shader 材质
+    const targetParams = { temp: 0.5, coriolis: 0.5, obstacle: 0.0 };
+    const currentParams = { ...targetParams };
+    const uniforms = {
+      uTime: { value: 0 }, uTemp: { value: currentParams.temp },
+      uCoriolis: { value: currentParams.coriolis }, uObstacle: { value: currentParams.obstacle },
+      uLightDir: { value: new THREE.Vector3(0.5, -0.5, 1.0).normalize() }
+    };
+
+    const typhoonVertexShader = `
+        uniform float uTime; uniform float uTemp; uniform float uCoriolis; uniform float uObstacle;
+        varying vec2 vUv; varying vec3 vPos;
+        vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+        float snoise(vec2 v) {
+            const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+            vec2 i  = floor(v + dot(v, C.yy) ); vec2 x0 = v - i + dot(i, C.xx);
+            vec2 i1; i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+            vec4 x12 = x0.xyxy + C.xxzz; x12.xy -= i1; i = mod289(i);
+            vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 )) + i.x + vec3(0.0, i1.x, 1.0 ));
+            vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+            m = m*m; m = m*m; vec3 x = 2.0 * fract(p * C.www) - 1.0; vec3 h = abs(x) - 0.5;
+            vec3 ox = floor(x + 0.5); vec3 a0 = x - ox; m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+            vec3 g; g.x  = a0.x  * x0.x  + h.x  * x0.y; g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+            return 130.0 * dot(m, g);
+        }
+        float fbm(vec2 p) { float f = 0.0; float amp = 0.5; for(int i=0; i<5; i++) { f += amp * snoise(p); p *= 2.0; amp *= 0.5; } return f; }
+        void main() {
+            vUv = uv; vec2 p = uv - 0.5; float dist = length(p); float angle = atan(p.y, p.x);
+            float swirl = uCoriolis * 15.0 * (1.0 - dist); angle += swirl;
+            angle += snoise(p * 12.0 + uTime * 0.4) * (uObstacle * 1.5);
+            vec2 swirledP = vec2(cos(angle), sin(angle)) * dist;
+            float noiseVal = fbm(swirledP * 6.5 - uTime * 0.35); noiseVal = noiseVal * 0.5 + 0.5;
+            float eye = smoothstep(0.01, 0.07, dist); float fade = smoothstep(0.5, 0.18, dist);
+            float intensity = uTemp * 1.6; intensity *= (1.0 - uObstacle * 0.75);
+            float height = noiseVal * eye * fade * intensity; vec3 pos = position; pos.z += max(height * 0.3, 0.0); vPos = pos;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+        }
+    `;
+    const typhoonFragmentShader = `
+        varying vec2 vUv; varying vec3 vPos; uniform float uTemp; uniform vec3 uLightDir;
+        void main() {
+            vec3 dpdx = dFdx(vPos); vec3 dpdy = dFdy(vPos); vec3 normal = normalize(cross(dpdx, dpdy));
+            float diff = max(dot(normal, uLightDir), 0.0); float ambient = 0.45; float h = max(vPos.z, 0.0);
+            vec3 lowCloudColor = vec3(0.65, 0.8, 0.95); vec3 highCloudColor = vec3(1.0, 1.0, 1.0);
+            vec3 color = mix(lowCloudColor, highCloudColor, smoothstep(0.0, 0.1, h));
+            color = color * (diff * 0.65 + ambient); vec2 p = vUv - 0.5; float dist = length(p);
+            float alphaFade = smoothstep(0.5, 0.2, dist) * smoothstep(0.02, 0.08, dist);
+            float alpha = smoothstep(0.0, 0.02, h) * alphaFade; alpha *= (uTemp * 0.5 + 0.5);
+            gl_FragColor = vec4(color, alpha);
+        }
+    `;
+
+    const typhoonGeo = new THREE.PlaneGeometry(4.0, 4.0, 512, 512);
+    const typhoonMat = new THREE.ShaderMaterial({ vertexShader: typhoonVertexShader, fragmentShader: typhoonFragmentShader, uniforms: uniforms, transparent: true, depthWrite: false, derivatives: true });
+    const typhoonMesh = new THREE.Mesh(typhoonGeo, typhoonMat); scene.add(typhoonMesh);
+
+    function updateTyphoonPosition(lat, lon) {
+      const x = ((lon - 100) / 190) * mapWidth - (mapWidth / 2);
+      const y = ((lat - (-60)) / 120) * mapHeight - (mapHeight / 2);
+      typhoonMesh.position.set(x, y, 0.5);
+    }
+    function checkLandfall(lat, lon) {
+      if (lat >= 10 && lat <= 45 && lon >= 100 && lon <= 122) return true;
+      if (lat >= 30 && lat <= 55 && lon >= 122 && lon <= 145) return true;
+      if (lat >= 10 && lat <= 60 && lon >= 235 && lon <= 260) return true;
+      if (lat <= -10 && lat >= -40 && lon >= 110 && lon <= 155) return true;
+      return false;
+    }
+    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+
+    // ==========================================
+    // Raycaster 射线拖拽
+    // ==========================================
+    const raycaster = new THREE.Raycaster(); const mouse = new THREE.Vector2();
+    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -0.5);
+    let isDraggingTyphoon = false;
+
+    container.addEventListener('pointerdown', (e) => {
+      if (isSimulating) return;
+      const rect = container.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1; mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera); const intersectPoint = new THREE.Vector3(); raycaster.ray.intersectPlane(dragPlane, intersectPoint);
+      if (intersectPoint) {
+        const clickRadius = cameraMode === 'micro' ? (12 * (1.0 + currentParams.temp)) : 25;
+        if (intersectPoint.distanceTo(typhoonMesh.position) < clickRadius) {
+          isDraggingTyphoon = true; controls.enabled = false; container.style.cursor = 'grabbing';
+        }
+      }
+    });
+
+    container.addEventListener('pointermove', (e) => {
+      if (!isDraggingTyphoon) {
+        const rect = container.getBoundingClientRect(); mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1; mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera); const intersectPoint = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(dragPlane, intersectPoint)) {
+          const clickRadius = cameraMode === 'micro' ? (12 * (1.0 + currentParams.temp)) : 25;
+          container.style.cursor = (!isSimulating && intersectPoint.distanceTo(typhoonMesh.position) < clickRadius) ? 'grab' : 'crosshair';
+        }
+        return;
+      }
+      const rect = container.getBoundingClientRect(); mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1; mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera); const intersectPoint = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(dragPlane, intersectPoint)) {
+        let newLon = 100 + (intersectPoint.x + mapWidth / 2) / mapWidth * 190; let newLat = -60 + (intersectPoint.y + mapHeight / 2) / mapHeight * 120;
+        currentCfg.lon = Math.max(100, Math.min(290, newLon)); currentCfg.lat = Math.max(-60, Math.min(60, newLat));
+
+        isTyphoonAlive = true; // 拖拽强制重生
+        updateSlidersVisually(); runPhysics();
+      }
+    });
+
+    window.addEventListener('pointerup', () => {
+      if (isDraggingTyphoon) { isDraggingTyphoon = false; controls.enabled = true; container.style.cursor = 'crosshair'; }
+    });
+
+    function updateSlidersVisually() {
+      sliderLon.value = currentCfg.lon; valLon.innerText = currentCfg.lon > 180 ? (360 - Math.round(currentCfg.lon)) + '° W' : Math.round(currentCfg.lon) + '° E';
+      sliderLat.value = currentCfg.lat; valLat.innerText = currentCfg.lat === 0 ? '0° (赤道)' : (currentCfg.lat > 0 ? Math.round(currentCfg.lat) + '° N' : Math.round(Math.abs(currentCfg.lat)) + '° S');
+    }
+
+    // ==========================================
+    // Minimap / 风场粒子
+    // ==========================================
+    const trackHistory = []; const MAX_TRACK_POINTS = 300;
+    function drawTrack() {
+      const canvas = document.getElementById('minimap-track'); if (!canvas) return;
+      const rect = canvas.parentElement.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr; canvas.height = rect.height * dpr; canvas.style.width = rect.width + 'px'; canvas.style.height = rect.height + 'px';
+      const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr); const w = rect.width; const h = rect.height;
+      ctx.clearRect(0, 0, w, h); if (trackHistory.length < 2) return;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 1.5;
+      for (let i = 1; i < trackHistory.length; i++) {
+        const alpha = 0.15 + (i / trackHistory.length) * 0.55; const prev = trackHistory[i - 1]; const cur = trackHistory[i];
+        ctx.beginPath(); ctx.moveTo(prev.x * w, prev.y * h); ctx.lineTo(cur.x * w, cur.y * h); ctx.strokeStyle = 'rgba(255,150,150,' + alpha.toFixed(2) + ')'; ctx.stroke();
+      }
+      ctx.lineWidth = 3;
+      for (let i = 1; i < trackHistory.length; i++) {
+        const alpha = 0.05 + (i / trackHistory.length) * 0.15; const prev = trackHistory[i - 1]; const cur = trackHistory[i];
+        ctx.beginPath(); ctx.moveTo(prev.x * w, prev.y * h); ctx.lineTo(cur.x * w, cur.y * h); ctx.strokeStyle = 'rgba(255,200,200,' + alpha.toFixed(2) + ')'; ctx.stroke();
+      }
+    }
+
+    const NUM_WIND_PARTICLES = 500;
+    const windParticleAngles = new Float32Array(NUM_WIND_PARTICLES), windParticleRadii = new Float32Array(NUM_WIND_PARTICLES);
+    const windParticleSpeeds = new Float32Array(NUM_WIND_PARTICLES), windParticleZOff = new Float32Array(NUM_WIND_PARTICLES);
+    const windPositions = new Float32Array(NUM_WIND_PARTICLES * 3);
+    for (let i = 0; i < NUM_WIND_PARTICLES; i++) {
+      windParticleAngles[i] = Math.random() * Math.PI * 2; windParticleRadii[i] = 1.8 + Math.random() * 3.2;
+      windParticleSpeeds[i] = 0.3 + Math.random() * 0.7; windParticleZOff[i] = (Math.random() - 0.5) * 1.2;
+      windPositions[i * 3] = Math.cos(windParticleAngles[i]) * windParticleRadii[i]; windPositions[i * 3 + 1] = Math.sin(windParticleAngles[i]) * windParticleRadii[i]; windPositions[i * 3 + 2] = windParticleZOff[i];
+    }
+    const windGeo = new THREE.BufferGeometry(); windGeo.setAttribute('position', new THREE.BufferAttribute(windPositions, 3));
+    const windMat = new THREE.PointsMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, size: 0.10, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+    const windPoints = new THREE.Points(windGeo, windMat); scene.add(windPoints);
+
+    function initMinimapBackground(img) {
+      const mCanvas = document.getElementById('minimap-bg'); const rect = mCanvas.parentElement.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1;
+      mCanvas.width = rect.width * dpr; mCanvas.height = rect.height * dpr; mCanvas.style.width = rect.width + 'px'; mCanvas.style.height = rect.height + 'px';
+      const mctx = mCanvas.getContext('2d'); mctx.scale(dpr, dpr); const mw = rect.width; const mh = rect.height;
+      const iw = img.naturalWidth || img.width; const ih = img.naturalHeight || img.height; if (!iw || !ih) return;
+      const s1x = (280 / 360) * iw, s1w = (80 / 360) * iw, s2x = 0, s2w = (110 / 360) * iw;
+      const srcY = (30 / 180) * ih, srcH = (120 / 180) * ih, d1w = (80 / 190) * mw, d2w = (110 / 190) * mw;
+      mctx.save(); mctx.drawImage(img, s1x, srcY, s1w, srcH, 0, 0, d1w, mh); mctx.drawImage(img, s2x, srcY, s2w, srcH, d1w, 0, d2w, mh);
+      mctx.fillStyle = 'rgba(0,0,0,0.2)'; mctx.fillRect(0, 0, mw, mh); mctx.restore();
+      const tCanvas = document.getElementById('minimap-track');
+      if (tCanvas) { tCanvas.width = rect.width * dpr; tCanvas.height = rect.height * dpr; tCanvas.style.width = rect.width + 'px'; tCanvas.style.height = rect.height + 'px'; }
+    }
+
+    function updateMinimap(lat, lon) {
+      const dot = document.getElementById('radar-dot'); const pctX = ((lon - 100) / 190); const pctY = ((60 - lat) / 120);
+      dot.style.left = (pctX * 100) + '%'; dot.style.top = (pctY * 100) + '%';
+      trackHistory.push({ x: pctX, y: pctY }); if (trackHistory.length > MAX_TRACK_POINTS) trackHistory.shift();
+      drawTrack();
+    }
+
+    // ==========================================
+    // 物理运算与核心动力学重构
+    // ==========================================
+    const sliderLon = document.getElementById('slider-lon'); const valLon = document.getElementById('val-lon');
+    const sliderLat = document.getElementById('slider-lat'); const valLat = document.getElementById('val-lat');
+    const sliderTemp = document.getElementById('slider-temp'); const valTemp = document.getElementById('val-temp');
+    const radarVignette = document.getElementById('radar-vignette');
+    const winOverlay = document.getElementById('win-overlay');
+    const alertOverlay = document.getElementById('alert-overlay');
+
+    let currentCfg = { lat: 15, lon: 140, sst: 28.5 };
+    let isSimulating = false, simLastTime = performance.now();
+    let isTyphoonAlive = true; // 存活状态指示
+    let currentMeteoPressure = 1010;
+
+    const SIM_SPEED = 1.0;
+    const STEERING = { tradeLon: -1.5, tradeLat: 0.3, transStart: 20, transEnd: 35, turnLonStart: -1.5, turnLonEnd: 1.0, turnLatStart: 0.3, turnLatEnd: 1.2, westerliesLon: 3.0, westerliesLat: 1.5 };
+
+    function getSteeringFlow(lat) {
+      const absLat = Math.abs(lat); let dLon, dLat;
+      if (absLat < STEERING.transStart) {
+        const linger = THREE.MathUtils.lerp(0.6, 1.0, absLat / STEERING.transStart);
+        dLon = STEERING.tradeLon * linger; dLat = STEERING.tradeLat * (0.4 + (absLat / STEERING.transStart) * 0.6);
+      } else if (absLat < STEERING.transEnd) {
+        const t = (absLat - STEERING.transStart) / (STEERING.transEnd - STEERING.transStart);
+        dLon = THREE.MathUtils.lerp(STEERING.turnLonStart, STEERING.turnLonEnd, t); dLat = THREE.MathUtils.lerp(STEERING.turnLatStart, STEERING.turnLatEnd, t);
+      } else {
+        const f = Math.min(1.0, (absLat - STEERING.transEnd) / 12);
+        dLon = STEERING.turnLonEnd + (STEERING.westerliesLon - STEERING.turnLonEnd) * f; dLat = STEERING.turnLatEnd + (STEERING.westerliesLat - STEERING.turnLatEnd) * f;
+      }
+      return { dLon, dLat };
+    }
+
+    function setSlidersEnabled(enabled) {
+      sliderTemp.disabled = !enabled; sliderTemp.style.opacity = enabled ? '1' : '0.35'; sliderTemp.style.cursor = enabled ? 'pointer' : 'not-allowed';
+      sliderLon.style.opacity = enabled ? '0.7' : '0.3'; sliderLat.style.opacity = enabled ? '0.7' : '0.3';
+    }
+
+    // ==========================================
+    // 核心监听逻辑：终极挑战状态与联动
+    // ==========================================
+    function checkUltimateChallenge(delta) {
+      if (!isChallengeMode || !isTyphoonAlive || missionState.isCompleted) return;
+
+      // 条件 3 (存活计时)：累加时间
+      missionState.survivalTime += delta;
+
+      // 条件 1 (信风带生成)：5 到 20 度之间
+      const absLat = Math.abs(currentCfg.lat);
+      if (absLat >= 5 && absLat <= 20) {
+        missionState.isInTradeWinds = true;
+      }
+
+      // 条件 2 (气压达标)：<= 920
+      if (currentMeteoPressure <= 920) {
+        missionState.isPressureLow = true;
+      }
+
+      // UI 状态点亮同步
+      if (missionState.isInTradeWinds) {
+        document.getElementById('ch-box-1').classList.remove('text-transparent');
+        document.getElementById('ch-box-1').classList.add('checked', 'text-white');
+        document.getElementById('ch-text-1').classList.add('checked');
+      }
+
+      if (missionState.isPressureLow) {
+        document.getElementById('ch-box-2').classList.remove('text-transparent');
+        document.getElementById('ch-box-2').classList.add('checked', 'text-white');
+        document.getElementById('ch-text-2').classList.add('checked');
+      }
+
+      document.getElementById('ch-time').innerText = missionState.survivalTime.toFixed(1);
+
+      if (missionState.survivalTime >= 15) {
+        document.getElementById('ch-box-3').classList.remove('text-transparent');
+        document.getElementById('ch-box-3').classList.add('checked', 'text-white');
+        document.getElementById('ch-text-3').classList.add('checked');
+      }
+
+      // 胜利判定
+      if (missionState.isInTradeWinds && missionState.isPressureLow && missionState.survivalTime >= 15) {
+        missionState.isCompleted = true;
+        document.getElementById('ultimate-win-overlay').style.opacity = '1';
+        document.getElementById('ultimate-win-overlay').style.transform = 'translate(-50%, 0)';
+        radarVignette.classList.add('ultimate-win-flash');
+      }
+    }
+
+    function simulateStep(delta) {
+      if (!isSimulating) return;
+      const dt = Math.min(delta, 0.05);
+      const flow = getSteeringFlow(currentCfg.lat);
+      currentCfg.lon += flow.dLon * dt * SIM_SPEED; currentCfg.lat += flow.dLat * dt * SIM_SPEED;
+
+      if (currentCfg.lon < 100 || currentCfg.lon > 290 || currentCfg.lat < -60 || currentCfg.lat > 60) {
+        currentCfg.lon = Math.min(290, Math.max(100, currentCfg.lon)); currentCfg.lat = Math.min(60, Math.max(-60, currentCfg.lat));
+        stopSimulation('卫星雷达失去目标，推演结束。'); return;
+      }
+
+      checkUltimateChallenge(dt);
+      updateSlidersVisually(); runPhysics();
+    }
+
+    function startSimulation() {
+      if (isSimulating || !isTyphoonAlive) return;
+      isSimulating = true; simLastTime = performance.now(); setSlidersEnabled(false);
+      document.getElementById('sim-btn').textContent = '● 推演中'; document.getElementById('sim-btn').style.background = 'rgba(48,209,88,0.25)'; document.getElementById('sim-btn').style.borderColor = 'rgba(48,209,88,0.5)'; document.getElementById('sim-btn').style.color = '#30d158'; document.getElementById('sim-btn').disabled = true;
+      document.getElementById('status-text').innerText = '自动推演中 — 风带引导';
+      trackHistory.length = 0;
+      missionState.survivalTime = 0; // 重置存活计时器
+    }
+
+    function stopSimulation(msg) {
+      if (!isSimulating) return;
+      isSimulating = false; setSlidersEnabled(true);
+      document.getElementById('sim-btn').textContent = '▶ 启动推演'; document.getElementById('sim-btn').style.background = 'rgba(48,209,88,0.15)'; document.getElementById('sim-btn').style.borderColor = 'rgba(48,209,88,0.3)'; document.getElementById('sim-btn').style.color = '#30d158'; document.getElementById('sim-btn').disabled = false;
+      if (msg) showStatus(msg, 'warning');
+    }
+
+    function showStatus(text, type) {
+      const dot = document.getElementById('status-dot'), txt = document.getElementById('status-text'), box = document.getElementById('status-indicator');
+      if (type === 'danger') { dot.className = 'dot danger'; txt.style.color = '#ff453a'; box.style.background = 'rgba(255,69,58,0.1)'; box.style.borderColor = 'rgba(255,69,58,0.2)'; }
+      else if (type === 'warning') { dot.className = 'dot warning'; txt.style.color = '#ff9f0a'; box.style.background = 'rgba(255,159,10,0.12)'; box.style.borderColor = 'rgba(255,159,10,0.3)'; }
+      else if (type === 'dead') { dot.className = 'dot dead'; txt.style.color = '#8e8e93'; box.style.background = 'rgba(142,142,147,0.12)'; box.style.borderColor = 'rgba(142,142,147,0.3)'; }
+      else { dot.className = 'dot active'; txt.style.color = '#30d158'; box.style.background = 'rgba(48,209,88,0.1)'; box.style.borderColor = 'rgba(48,209,88,0.2)'; }
+      txt.innerText = text;
+    }
+
+    function showAlertOverlay(text, show) {
+      if (show && !missionState.isCompleted) {
+        document.getElementById('alert-text').innerText = text;
+        alertOverlay.style.opacity = '1'; alertOverlay.style.transform = 'translate(-50%, 0)';
+      } else {
+        alertOverlay.style.opacity = '0'; alertOverlay.style.transform = 'translate(-50%, -16px)';
+      }
+    }
+
+    function calculateMeteoData(tempRaw) {
+      // 这里的计算与实际携带的 temp 强绑定，确保即使在极佳位置，如果能量流失殆尽气压也会升回去
+      let pressure = 1010; let windSpeed = 0;
+      if (tempRaw > 0) {
+        pressure -= tempRaw * 120; // 极致条件 temp 约能到 1.0 (32C), pressure -> 890
+        windSpeed += tempRaw * 75;
+      }
+      pressure = Math.round(Math.min(1010, Math.max(880, pressure)));
+      windSpeed = Math.round(Math.min(80, Math.max(0, windSpeed * 10)) / 10 * 10) / 10;
+      return { pressure, windSpeed };
+    }
+
+    function runPhysics() {
+      updateTyphoonPosition(currentCfg.lat, currentCfg.lon);
+      const absLat = Math.abs(currentCfg.lat);
+      const isLand = checkLandfall(currentCfg.lat, currentCfg.lon);
+      const isEquator = absLat <= 3;
+      const isWindShear = absLat > 25; // 硬核知识点植入
+
+      // 计算纯净的分数 (供面板显示)
+      const scores = calculateTyphoonScore(currentCfg.sst, currentCfg.lat, isLand);
+      document.getElementById('bar-energy').style.width = scores.energy + '%'; document.getElementById('score-energy').innerText = Math.round(scores.energy) + '%';
+      document.getElementById('bar-rot').style.width = scores.rotation + '%'; document.getElementById('score-rot').innerText = Math.round(scores.rotation) + '%';
+      document.getElementById('bar-struct').style.width = scores.structure + '%'; document.getElementById('score-struct').innerText = Math.round(scores.structure) + '%';
+      document.getElementById('score-total').innerText = scores.total + '%';
+
+      targetParams.coriolis = Math.sin(currentCfg.lat * Math.PI / 180) * 1.5;
+
+      // ====== 损伤累加与重生核心机制 ======
+      let targetTemp = 0;
+      let targetObs = 0;
+      let alertMsg = null;
+
+      if (!isTyphoonAlive) {
+        targetTemp = 0.0; targetObs = 0.0; // 死透了
+        showStatus('气旋已彻底消散 (拖拽复活)', 'dead');
+      } else {
+        if (isLand) {
+          targetObs = 1.0; targetTemp = 0.0; // 陆地消耗：目标归零，缓慢下降
+          showStatus('气旋登陆，地形摩擦急剧消耗能量', 'danger');
+        } else if (isEquator) {
+          targetObs = 0.0; targetTemp = 0.0;
+          alertMsg = '赤道地区无地转偏向力，无法维持涡旋';
+          showStatus('赤道消散中', 'warning');
+        } else if (isWindShear) {
+          targetObs = 0.8; targetTemp = 0.0; // 高空风切变撕裂
+          alertMsg = '警告：脱离信风带！高空垂直风切变过大，对流云塔被撕裂！';
+          showStatus('垂直风切变撕裂', 'danger');
+        } else {
+          // 黄金海域，正常发育或重生
+          targetObs = 0.0; targetTemp = (currentCfg.sst - 25) / 7.0;
+          showStatus('气旋稳定发育活跃中', 'active');
+        }
+      }
+
+      targetParams.obstacle = targetObs;
+      targetParams.temp = targetTemp;
+
+      // 实时计算气象数据 (用 currentParams.temp 保证数据变化是平滑的)
+      const meteo = calculateMeteoData(currentParams.temp);
+      currentMeteoPressure = meteo.pressure;
+      document.getElementById('val-pressure').innerText = meteo.pressure + ' hPa';
+      document.getElementById('val-wind').innerText = meteo.windSpeed + ' m/s';
+
+      showAlertOverlay(alertMsg, !!alertMsg);
+
+      // 沙盒通关处理
+      if (!isChallengeMode) {
+        if (!isWin && scores.total >= missions[currentMode].target && isTyphoonAlive && !isEquator && !isWindShear) {
+          isWin = true; winOverlay.style.opacity = '1'; winOverlay.style.transform = 'translate(-50%, 0)'; radarVignette.classList.add('win-flash');
+        } else if (scores.total < missions[currentMode].target || !isTyphoonAlive) {
+          isWin = false; winOverlay.style.opacity = '0'; winOverlay.style.transform = 'translate(-50%, -16px)'; radarVignette.classList.remove('win-flash');
+        }
+      } else {
+        winOverlay.style.opacity = '0'; radarVignette.classList.remove('win-flash');
+      }
+
+      updateMinimap(currentCfg.lat, currentCfg.lon);
+    }
+
+    sliderTemp.addEventListener('input', (e) => {
+      currentCfg.sst = parseFloat(e.target.value); valTemp.innerText = currentCfg.sst.toFixed(1) + ' °C';
+      isTyphoonAlive = true; runPhysics(); // 调温度强制复活
+    });
+
+    document.getElementById('sim-btn').addEventListener('click', startSimulation);
+
+    document.getElementById('reset-sim-btn').addEventListener('click', () => {
+      stopSimulation(null); currentCfg.lat = 15; currentCfg.lon = 140; currentCfg.sst = 28.5; sliderTemp.value = 28.5; valTemp.innerText = '28.5 °C';
+      updateSlidersVisually(); trackHistory.length = 0; isTyphoonAlive = true; // 复活
+      if (!isChallengeMode) { winOverlay.style.opacity = '0'; radarVignette.classList.remove('win-flash'); }
+      resetChallengeUI(); runPhysics();
+    });
+
+    runPhysics(); updateSlidersVisually();
+
+    // ==========================================
+    // 动画循环 + 动态体积缩放与智能运镜
+    // ==========================================
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const simNow = performance.now(); const simDelta = Math.min((simNow - simLastTime) / 1000, 0.05); simLastTime = simNow;
+      if (isSimulating) simulateStep(simDelta);
+
+      // 彻底死亡判定机制
+      if (isTyphoonAlive && currentParams.temp < 0.05 && targetParams.temp <= 0.01) {
+        isTyphoonAlive = false; runPhysics(); // 触发 UI 更新
+      }
+
+      // 平滑过度参数
+      currentParams.temp += (targetParams.temp - currentParams.temp) * 0.04;
+      currentParams.coriolis += (targetParams.coriolis - currentParams.coriolis) * 0.06;
+      currentParams.obstacle += (targetParams.obstacle - currentParams.obstacle) * 0.06;
+
+      // 视觉震撼：动态体积缩放
+      // 台风能量越大，缩放倍数越高
+      const energy = Math.max(0, currentParams.temp);
+      const scaleFactor = 1.0 + energy * 1.5;
+      typhoonMesh.scale.set(scaleFactor, scaleFactor, 1.0);
+
+      // Camera 模式与智能运镜
+      const targetCamX = cameraMode === 'micro' ? typhoonMesh.position.x : 0;
+      const targetCamY = cameraMode === 'micro' ? typhoonMesh.position.y : 0;
+      // Z 轴微距拉近，随台风变大而微微后退 (22 到 26)
+      const targetCamZ = cameraMode === 'micro' ? (22 + energy * 4.0) : 110;
+      const targetCtrlX = cameraMode === 'micro' ? typhoonMesh.position.x : 0;
+      const targetCtrlY = cameraMode === 'micro' ? typhoonMesh.position.y : 0;
+
+      controls.target.x += (targetCtrlX - controls.target.x) * 0.15;
+      controls.target.y += (targetCtrlY - controls.target.y) * 0.15;
+      controls.target.z = 0;
+      camera.position.x += (targetCamX - camera.position.x) * 0.15;
+      camera.position.y += (targetCamY - camera.position.y) * 0.15;
+      camera.position.z += (targetCamZ - camera.position.z) * 0.05; // 缓慢拉近/退远
+      controls.update();
+
+      const rotSpeed = 0.008 + energy * 0.04;
+      const tx = typhoonMesh.position.x; const ty = typhoonMesh.position.y; const tz = typhoonMesh.position.z;
+      const pos = windPoints.geometry.attributes.position.array;
+
+      for (let i = 0; i < NUM_WIND_PARTICLES; i++) {
+        windParticleAngles[i] += rotSpeed * windParticleSpeeds[i];
+        // 粒子位置也随体积动态扩张
+        pos[i * 3] = tx + Math.cos(windParticleAngles[i]) * (windParticleRadii[i] * scaleFactor);
+        pos[i * 3 + 1] = ty + Math.sin(windParticleAngles[i]) * (windParticleRadii[i] * scaleFactor);
+        pos[i * 3 + 2] = tz + windParticleZOff[i] * scaleFactor;
+      }
+      windPoints.geometry.attributes.position.needsUpdate = true;
+      windMat.opacity = 0.02 + energy * 0.5;
+      windMat.size = 0.04 + energy * 0.15;
+
+      uniforms.uTime.value = clock.getElapsedTime();
+      uniforms.uTemp.value = currentParams.temp;
+      uniforms.uCoriolis.value = currentParams.coriolis;
+      uniforms.uObstacle.value = currentParams.obstacle;
+
+      // 实时平滑更新部分气象 UI (只有当不需要跑重度逻辑时)
+      if (isTyphoonAlive && !isSimulating && currentParams.temp > 0) {
+        const meteo = calculateMeteoData(currentParams.temp);
+        document.getElementById('val-pressure').innerText = meteo.pressure + ' hPa';
+        document.getElementById('val-wind').innerText = meteo.windSpeed + ' m/s';
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      width = viewport.clientWidth; height = viewport.clientHeight;
+      renderer.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix();
+    });
+
+    // ==========================================
+    // 情境感知 AI 助手 (WeatherAssistant)
+    // ==========================================
+    class WeatherAssistant {
+      constructor() {
+        this.knowledge = [
+          // [keywords, answer]
+          [['地转偏向力', 'coriolis'], '地转偏向力（科里奥利力）因地球自转产生。在北半球，运动物体会向右偏转——这解释了台风逆时针旋转的原因。纬度 5-25° 之间偏向力最适宜台风发育；赤道（<3°）偏向力几乎为零，无法形成台风。'],
+          [['赤道', '消散', '为什么赤道'], '赤道附近（±3°）地转偏向力趋近于零，空气无法获得旋转所需的角动量，低压中心无法形成台风眼。因此台风永远不会在赤道生成——这也是你当前模拟中赤道地区气旋立刻消散的原因。'],
+          [['台风形成', '怎么形成', '如何', '什么是台风'], '台风（热带气旋）形成需要四个条件：(1) 海温 > 26.5°C 提供潜热能量；(2) 离赤道至少 5 个纬度的地转偏向力；(3) 低垂直风切变维持结构；(4) 海洋表层的充足水汽。'],
+          [['变弱', '减弱', '衰减', '为什么变弱', '消散中'], '台风减弱的常见原因：登陆（陆地切断水汽来源 + 地表摩擦）、进入高纬度冷水区（海温 < 26.5°C）、或接近赤道（偏向力消失）。请检查右侧状态指示灯了解具体原因。'],
+          [['登陆', '陆地', '上山', '碰撞'], '当台风登陆后：(1) 海洋水汽供给立即中断；(2) 地表摩擦力远大于海面，导致风速骤降；(3) 气压迅速回升至 1000+ hPa。这个过程的物理后果在"结构完整度"进度条上可以看到。'],
+          [['冷水', '高纬', '高纬度', '海温'], '高纬度海水温度低，无法支持积云对流的潜热释放。当台风移动到纬度 35° 以上，海温通常降至 26°C 以下，台风失去能量引擎。你会在状态栏看到"高纬度冷水区 / 气旋消散中"的提示。'],
+          [['信风', '信风带', '为什么向西', '为什么往西北'], '在 0-20°N 纬度带，副热带高压南缘的信风（贸易风）持续向西吹拂，引导台风向西北方向移动。这和哥伦布横渡大西洋的原理完全一致。'],
+          [['转向', '抛物线', '为什么转向', '路径'], '台风路径的"抛物线转向"是地球风带引导的经典结果：低纬信风推它向西北/西，到了副热带（20-35°N）信风减弱西风增强，台风向北/东北转向。整个运动类似抛物线的曲率。'],
+          [['西风带', '为什么向东', '东北'], '当台风进入 >35°N 的温带，遇到中纬度盛行西风带，它会被强烈推向东北方向。西风带风速可达 3-5 度/秒以上——这也是为什么许多台风最后"直冲"日本或北美西海岸。'],
+          [['下沉', '风切变', '干空气', '为什么变扁'], '如果台风遇到强垂直风切变或干空气入侵（模拟中表现为赤道/陆地交界），深层对流会被破坏，云塔无法维持竖直高度，台风在 Shader 中会变"扁平"。'],
+          [['障碍物', '岛', '地形', '菲律宾'], '菲律宾群岛、日本列岛等陆地障碍物会：(1) 切断台风低层水汽供应；(2) 通过地形摩擦破坏环流结构；(3) 如果台风跨度完整跨过岛屿，低压中心可能在山脉一侧"崩毁"。'],
+        ];
+      }
+
+      getResponse(query) {
+        const lowerQ = query.toLowerCase();
+
+        // --- State-aware responses first ---
+        const absLat = Math.abs(currentCfg.lat);
+        const isLand = checkLandfall(currentCfg.lat, currentCfg.lon);
+        const isEquator = absLat <= 3;
+        const isHighLat = absLat > 35;
+
+        if (/为什么.*弱|变弱|消散|衰减/.test(lowerQ) && !/为什么台风/.test(lowerQ) && !/赤道/.test(lowerQ)) {
+          const reasons = [];
+          if (isLand) reasons.push('检测到台风已撞击陆地（经度 ' + Math.round(currentCfg.lon) + '°），水汽供应切断，中心气压飙升至 ' + document.getElementById('val-pressure').innerText);
+          else if (isEquator) reasons.push('检测到台风位于赤道无偏向力区（纬度 ' + Math.abs(Math.round(currentCfg.lat)) + '°），旋转被消除');
+          else if (isHighLat) reasons.push('检测到台风已进入高纬度冷水区（纬度 ' + Math.abs(Math.round(currentCfg.lat)) + '°），海温过低无法维持对流');
+          else if (currentCfg.sst < 26.5) reasons.push('当前海温 ' + currentCfg.sst.toFixed(1) + '°C 低于台风发育阈值 26.5°C');
+          else reasons.push('当前台风能量强度正常，气压 ' + document.getElementById('val-pressure').innerText + '，风速 ' + document.getElementById('val-wind').innerText);
+          return '状态感知分析：' + reasons.join('。');
+        }
+
+        if (/现在.*在哪|位置|坐标|经纬/.test(lowerQ)) {
+          const lonStr = currentCfg.lon > 180 ? (360 - currentCfg.lon).toFixed(0) + ' W' : currentCfg.lon.toFixed(0) + ' E';
+          const latStr = currentCfg.lat > 0 ? currentCfg.lat.toFixed(0) + ' N' : Math.abs(currentCfg.lat).toFixed(0) + ' S';
+          const pressure = document.getElementById('val-pressure').innerText;
+          const wind = document.getElementById('val-wind').innerText;
+          return '当前台风位置：' + lonStr + '，' + latStr + '。中心气压 ' + pressure + '，最大风速 ' + wind + '。' + (isSimulating ? '推演运行中。' : '待机模式，可调整生成点。');
+        }
+
+        if (/气压|风速|能量|多少|数值|读数/.test(lowerQ)) {
+          return '实时遥测：中心气压 ' + document.getElementById('val-pressure').innerText + '，最大风速 ' + document.getElementById('val-wind').innerText + '，SST ' + currentCfg.sst.toFixed(1) + '°C，纬度 ' + Math.abs(Math.round(currentCfg.lat)) + '°。综合评价 ' + document.getElementById('score-total').innerText + '。';
+        }
+
+        // --- Keyword match from knowledge base ---
+        let bestMatch = null; let bestScore = 0;
+        for (const [keywords, answer] of this.knowledge) {
+          let score = 0;
+          for (const kw of keywords) {
+            if (lowerQ.includes(kw)) score += kw.length;
+          }
+          if (score > bestScore) { bestScore = score; bestMatch = answer; }
+        }
+
+        if (bestMatch && bestScore > 0) return bestMatch;
+
+        return '我没有完全理解你的问题。你可以问我："为什么台风变弱了？"、"什么是地转偏向力？"、"台风为什么在赤道消散？"、"台风位置在哪？"。';
+      }
+    }
+
+    const assistant = new WeatherAssistant();
+
+    function addMessage(text, type) {
+      const container = document.getElementById('chat-messages');
+      const div = document.createElement('div');
+      div.className = 'msg-bubble ' + (type === 'user' ? 'msg-user' : 'msg-bot');
+      div.textContent = text;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function showTyping() {
+      const container = document.getElementById('chat-messages');
+      const div = document.createElement('div');
+      div.className = 'msg-typing';
+      div.id = 'typing-indicator';
+      div.textContent = '分析中...';
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function removeTyping() {
+      const el = document.getElementById('typing-indicator');
+      if (el) el.remove();
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('chat-input');
+      const query = input.value.trim();
+      if (!query) return;
+      addMessage(query, 'user');
+      input.value = '';
+      showTyping();
+      setTimeout(() => {
+        removeTyping();
+        const reply = assistant.getResponse(query);
+        addMessage(reply, 'bot');
+      }, 800);
+    }
+
+    document.getElementById('chat-send-btn').addEventListener('click', sendMessage);
+    document.getElementById('chat-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    window.onload = animate;
+  </script>
+</body>
+
+</html>
